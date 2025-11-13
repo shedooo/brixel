@@ -309,10 +309,10 @@
   (match (map-get? pending-operations op-id)
     operation
       (let ((current-approvals (get approvals operation)))
+        (try! (is-owner-or-has-permission tx-sender (get operation-type operation)))
         (asserts! (not (get executed operation)) err-operation-executed)
         (asserts! (< stacks-block-height (get expiry operation)) err-operation-expired)
         (asserts! (is-none (index-of current-approvals tx-sender)) err-already-approved)
-        (asserts! (> (default-to u0 (map-get? user-roles tx-sender)) u0) err-unauthorized)
         
         (let ((new-approvals (unwrap! (as-max-len? (append current-approvals tx-sender) u5) err-invalid-amount)))
           (map-set pending-operations op-id (merge operation {approvals: new-approvals}))
@@ -327,6 +327,7 @@
   (match (map-get? pending-operations op-id)
     operation
       (begin
+        (try! (is-owner-or-has-permission tx-sender (get operation-type operation)))
         (asserts! (not (get executed operation)) err-operation-executed)
         (asserts! (< stacks-block-height (get expiry operation)) err-operation-expired)
         (asserts! (>= (len (get approvals operation)) (get required-approvals operation)) err-insufficient-approvals)
@@ -462,11 +463,13 @@
 ;; Enhanced Token Functions
 ;; ================
 
-(define-public (mint (amount uint) (metadata {description: (string-ascii 256), asset-type: (string-ascii 64), valuation: uint}))
+(define-public (mint (recipient principal) (amount uint) (metadata {description: (string-ascii 256), asset-type: (string-ascii 64), valuation: uint}))
   (begin
     (try! (is-owner-or-has-permission tx-sender "mint"))
     (try! (not-paused))
     (try! (valid-amount amount))
+    (try! (not-frozen recipient))
+    (try! (only-kyc-valid recipient))
     
     ;; Check supply cap
     (asserts! (<= (+ (var-get total-supply) amount) max-supply) err-supply-cap-exceeded)
@@ -486,8 +489,8 @@
         (var-set metadata-counter (+ current-id u1))
         (var-set total-supply (+ (var-get total-supply) amount))
         
-        (try! (ft-mint? rwa-token amount tx-sender))
-        (emit-mint tx-sender amount current-id)
+        (try! (ft-mint? rwa-token amount recipient))
+        (emit-mint recipient amount current-id)
         (ok current-id)
       )
     )
